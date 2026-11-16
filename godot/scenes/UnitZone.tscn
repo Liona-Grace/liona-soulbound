@@ -1,0 +1,17 @@
+[gd_scene format=3 uid="uid://bvxe2bb7da42d"]
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_glv2v"]
+bg_color = Color(0.16078432, 0.23921569, 0.21176471, 1)
+border_width_left = 2
+border_width_top = 2
+border_width_right = 2
+border_width_bottom = 2
+border_color = Color(0.5058824, 0.6039216, 0.5372549, 1)
+
+[node name="UnitZone" type="Panel" unique_id=86509812]
+custom_minimum_size = Vector2(100, 140)
+offset_left = 350.0
+offset_top = 204.0
+offset_right = 450.0
+offset_bottom = 344.0
+theme_override_styles/panel = SubResource("StyleBoxFlat_glv2v")

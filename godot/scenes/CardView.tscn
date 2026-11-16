@@ -1,0 +1,31 @@
+[gd_scene format=3 uid="uid://dqwu45kcrlk5c"]
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_abyoq"]
+bg_color = Color(0, 0, 0, 1)
+
+[node name="CardView" type="Panel" unique_id=1071379944]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_right = -1052.0
+offset_bottom = -508.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="CardName" type="Label" parent="." unique_id=2088441001]
+layout_mode = 1
+offset_left = 20.0
+offset_top = 5.0
+offset_right = 110.0
+offset_bottom = 25.0
+theme_override_font_sizes/font_size = 12
+text = "Bone Knight"
+horizontal_alignment = 1
+
+[node name="CardArtwork" type="Panel" parent="." unique_id=1645918304]
+layout_mode = 1
+offset_left = 5.0
+offset_top = 28.0
+offset_right = 95.0
+offset_bottom = 93.0
+theme_override_styles/panel = SubResource("StyleBoxFlat_abyoq")

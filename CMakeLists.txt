@@ -1,17 +1,9 @@
 cmake_minimum_required(VERSION 3.16)
+project(liona_soulbound VERSION 0.1.0 LANGUAGES CXX)
 
-project(studies-test-somethings)
+add_subdirectory(core)
 
-set(CMAKE_CXX_STANDARD 17)
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
-
-add_executable(
-    studies
-    main.cpp
-)
-
-target_include_directories(
-    studies
-    PRIVATE
-    ${CMAKE_SOURCE_DIR}
-)
+include(CTest)
+if(BUILD_TESTING)
+    add_subdirectory(tests/core)
+endif()

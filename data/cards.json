@@ -1,0 +1,6 @@
+{
+  "cards": [
+    { "id": "knight", "name": "Knight", "atk": 5, "hp": 8 },
+    { "id": "guard", "name": "Guard", "atk": 3, "hp": 6 }
+  ]
+}
