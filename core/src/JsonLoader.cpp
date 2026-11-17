@@ -18,12 +18,16 @@ constexpr std::string_view BoardSizeKey = "boardSize";
 constexpr std::string_view DeckSizeKey = "deckSize";
 
 GameConfig parseGameConfig(const nlohmann::json& json) {
-    detail::requireFields(json, {StartingHPKey, StartingHandSizeKey, BoardSizeKey, DeckSizeKey}, "game config");
+    // Existing four-field files retain the default copy limit of three.
+    auto fields = json;
+    if (fields.is_object() && !fields.contains("maxCopiesPerCard")) fields["maxCopiesPerCard"] = GameConfig{}.maxCopiesPerCard;
+    detail::requireFields(fields, {StartingHPKey, StartingHandSizeKey, BoardSizeKey, DeckSizeKey, "maxCopiesPerCard"}, "game config");
     GameConfig config{
-        detail::jsonInteger<int>(json.at(StartingHPKey)),
-        detail::jsonInteger<std::size_t>(json.at(StartingHandSizeKey)),
-        detail::jsonInteger<std::size_t>(json.at(BoardSizeKey)),
-        detail::jsonInteger<std::size_t>(json.at(DeckSizeKey))
+        detail::jsonInteger<int>(fields.at(StartingHPKey)),
+        detail::jsonInteger<std::size_t>(fields.at(StartingHandSizeKey)),
+        detail::jsonInteger<std::size_t>(fields.at(BoardSizeKey)),
+        detail::jsonInteger<std::size_t>(fields.at(DeckSizeKey)),
+        detail::jsonInteger<std::size_t>(fields.at("maxCopiesPerCard"))
     };
     if (!config.isValid()) throw std::runtime_error("Invalid game config values");
     return config;

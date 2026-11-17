@@ -8,7 +8,7 @@ namespace soulbound {
 enum class DeckValidationMode { Storage, Play };
 enum class DeckValidationError {
     None, InvalidId, InvalidName, UnknownCard, InvalidCount,
-    TooManyCards, IncompleteDeck
+    TooManyCards, TooManyCopies, IncompleteDeck
 };
 struct DeckValidationResult {
     DeckValidationError error = DeckValidationError::None;

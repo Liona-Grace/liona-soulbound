@@ -27,6 +27,7 @@ int main() {
         require(cards.add({"guard", "Guard", 3, 6}), "guard definition");
         GameConfig config;
         config.deckSize = 4;
+        config.maxCopiesPerCard = 4; // Legacy homogeneous combat fixture.
         config.startingHandSize = 2;
         Game game(cards, config, 7);
         require(game.start(Game::Deck(4, "knight"), Game::Deck(4, "guard")) == ActionError::None, "start");

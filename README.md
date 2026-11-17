@@ -34,7 +34,8 @@ Target thư viện: `soulbound_core` (alias `soulbound::core`). Có thể tắt 
 
 Core cung cấp CardDatabase, DeckDefinition, DeckValidator, DeckStorage và
 DeckManager. Deck JSON nằm trong `data/decks/`; lưu được Deck nháp, nhưng chỉ
-Deck đủ `GameConfig.deckSize` mới bắt đầu trận. Xem [API và schema Deck](docs/deck-management.md).
+Deck đủ `GameConfig.deckSize` mới bắt đầu trận. Mỗi Card ID tối đa
+`GameConfig.maxCopiesPerCard` bản sao (mặc định 3), tính cả các entry trùng ID. Xem [API và schema Deck](docs/deck-management.md).
 
 ```sh
 ./build/cli/soulbound_cli --list-decks
@@ -59,7 +60,8 @@ khi nạp CardDatabase. Nếu cấu hình lỗi, card database chưa được đ
 `JsonLoader::loadGameConfig(path)` cũng dùng độc lập được.
 Cần đủ bốn trường số nguyên; HP, boardSize, deckSize phải dương;
 startingHandSize không âm và không vượt deckSize. Trường thiếu, trùng, lạ hoặc
-sai kiểu đều gây `std::runtime_error`, không tự dùng giá trị mặc định.
+sai kiểu đều gây `std::runtime_error`. Trường tùy chọn `maxCopiesPerCard` phải
+là số nguyên dương; file cũ không có trường này dùng mặc định 3.
 `GameConfig` vẫn có mặc định 20/4/6/30 cho các mô phỏng cấu hình trực tiếp bằng C++.
 
 Mỗi người rút 4 lá từ Deck lúc khởi tạo, còn 26 lá. Mọi tham số trên đều có thể cấu hình.

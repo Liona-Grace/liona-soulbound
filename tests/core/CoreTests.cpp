@@ -63,6 +63,9 @@ GameConfig loadGameConfigJson(std::string_view text) {
     return loadTestJson(text, JsonLoader::loadGameConfig);
 }
 
+// Historical combat fixtures intentionally permit repeated vanilla units.
+GameConfig gameplayConfig() { GameConfig config; config.maxCopiesPerCard = 30; return config; }
+
 CardDatabase database() { return JsonLoader::loadCards(CARD_DATA_PATH); }
 
 Game::Deck deck(const std::string& id = "knight") { return Game::Deck(30, id); }
@@ -244,7 +247,7 @@ void testStart() {
 
 void testShuffleAndSnapshot() {
     auto db = database();
-    Game first(db, {}, 1234), second(db, {}, 1234), third(db, {}, 5678);
+    Game first(db, gameplayConfig(), 1234), second(db, gameplayConfig(), 1234), third(db, gameplayConfig(), 5678);
     CHECK(db.add({"extra", "Extra", 1, 1}));
     const auto mixed = mixedDeck();
     ok(first.start(mixed, mixed));
@@ -262,7 +265,7 @@ void testShuffleAndSnapshot() {
 }
 
 void testConfig() {
-    GameConfig config{40, 2, 3, 6};
+    GameConfig config{40, 2, 3, 6, 6};
     Game game(database(), config, 7);
     ok(game.start(Game::Deck(6, "knight"), Game::Deck(6, "guard")));
     CHECK(game.getState().players[0].hp == 40);
@@ -286,6 +289,21 @@ void testConfigJson() {
     CHECK(config.deckSize == 30);
     const auto reordered = loadGameConfigJson(
         R"({"deckSize":6,"boardSize":3,"startingHandSize":2,"startingHP":40})");
+    CHECK(reordered.maxCopiesPerCard == 3); // Absent field stays backward compatible.
+    const auto explicitLimit = loadGameConfigJson(
+        R"({"startingHP":20,"startingHandSize":4,"boardSize":6,"deckSize":30,"maxCopiesPerCard":4})");
+    CHECK(explicitLimit.maxCopiesPerCard == 4);
+    for (const auto* value : {"0", "-1", "1.5", "true", "null", "\"3\"", "18446744073709551616"}) {
+        bool threw = false;
+        try {
+            (void)loadGameConfigJson(std::string(R"({"startingHP":20,"startingHandSize":4,"boardSize":6,"deckSize":30,"maxCopiesPerCard":)") + value + "}");
+        } catch (const std::runtime_error&) { threw = true; }
+        CHECK(threw);
+    }
+    bool duplicateThrew = false;
+    try { (void)loadGameConfigJson(R"({"startingHP":20,"startingHandSize":4,"boardSize":6,"deckSize":30,"maxCopiesPerCard":3,"maxCopiesPerCard":4})"); }
+    catch (const std::runtime_error&) { duplicateThrew = true; }
+    CHECK(duplicateThrew);
     CHECK(reordered.startingHP == 40);
     CHECK(reordered.startingHandSize == 2);
     CHECK(reordered.boardSize == 3);
@@ -637,7 +655,7 @@ void testCombatGameOverAndLimits() {
 void testSimulations() {
     // Repeated legal and illegal operations must preserve conservation and ownership.
     for (std::uint32_t seed = 0; seed < 30; ++seed) {
-        Game game(database(), {}, seed);
+        Game game(database(), gameplayConfig(), seed);
         ok(game.start(mixedDeck(), mixedDeck()));
         invariant(game);
         for (int turn = 0; turn < 30 && game.getState().status == GameStatus::Playing; ++turn) {
@@ -845,7 +863,7 @@ void testHealingBoundaries() {
 void testCompleteSimulations() {
     struct Result { std::string trace; std::size_t actions; std::uint64_t turns; GameStatus status; };
     auto run = [](std::uint32_t seed) {
-        Game game(database(), {}, seed);
+        Game game(database(), gameplayConfig(), seed);
         ok(game.start(mixedDeck(), mixedDeck()));
         const auto ledger = identities(game);
         std::ostringstream trace;

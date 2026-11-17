@@ -2,5 +2,6 @@
   "startingHP": 5000,
   "startingHandSize": 5,
   "boardSize": 6,
-  "deckSize": 30
+  "deckSize": 30,
+  "maxCopiesPerCard": 3
 }

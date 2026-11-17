@@ -14,7 +14,7 @@ const char* errorMessage(soulbound::ActionError error) {
     case ActionError::WrongPlayer: return "It is another player's turn.";
     case ActionError::WrongPhase: return "Action is unavailable in this phase.";
     case ActionError::FirstTurn: return "Attacking is unavailable on the first turn.";
-    case ActionError::InvalidDeck: return "Deck size does not match the game configuration.";
+    case ActionError::InvalidDeck: return "Deck violates the configured deck-building rules.";
     case ActionError::UnknownCard: return "Deck contains an unknown card.";
     case ActionError::InvalidInstance: return "Card instance was not found.";
     case ActionError::InvalidZone: return "Invalid board zone.";

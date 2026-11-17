@@ -73,6 +73,15 @@ failure condition, not a new game rule.
   this validation. The unsigned turn counter has no explicit exhaustion guard;
   reaching its limit through normal gameplay was not exercised.
 
+## Copy-limit compatibility update
+
+The historical two-card combat scenarios now use explicit test-only fixtures
+with maxCopiesPerCard set to 30 (or 6 for the six-card fixture). This preserves
+their original combat setup while the production default is 3. Separate deck
+boundary tests enforce that default through both Game start APIs; these old
+simulation results are not a claim that their deck lists are legal at the new
+default. Test fixtures are independent of editable application card stats.
+
 ## Reproduction
 
 ```sh

@@ -19,8 +19,8 @@ exists. To use another directory (or move the executable), pass its path:
 A supplied relative path is resolved against the caller's working directory.
 The directory must contain `game_config.json` and `cards.json`, and a `decks/` subdirectory. Deck card IDs must exist in `cards.json`.
 The default selections are `starter-knight` and `starter-guard`, loaded from
-`decks/<id>.json`. Both sample decks contain 15 Knights and 15 Guards.
-Core validates their size against the configuration before starting.
+`decks/<id>.json`. Both sample decks contain ten distinct Card IDs with three copies each.
+Core validates their size and per-Card copy totals against the configuration before starting.
 
 List available decks or choose two by ID:
 

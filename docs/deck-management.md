@@ -13,8 +13,8 @@ is `data/decks/`. Files use this strict schema:
   "id": "my-deck",
   "name": "My Knight Deck",
   "cards": [
-    { "cardId": "knight", "count": 20 },
-    { "cardId": "guard", "count": 10 }
+    { "cardId": "knight", "count": 3 },
+    { "cardId": "guard", "count": 3 }
   ]
 }
 ```
@@ -23,8 +23,11 @@ ID must contain only ASCII letters, digits, `-` or `_`; it must match the filena
 The name cannot be blank. Counts are positive signed 64-bit integers. JSON
 strings, fractions, booleans, out-of-range integers, unknown/duplicate JSON fields
 and mismatched types are rejected. Card IDs must exist in the supplied database.
-Repeated entries for the same Card ID are allowed and contribute to the total;
-there is no per-Card copy limit.
+Repeated entries for the same Card ID are allowed, but their combined count
+must not exceed `GameConfig.maxCopiesPerCard` (default **3**). Exceeding the cap
+returns `DeckValidationError::TooManyCopies` in both Storage and Play modes.
+The six-card example above is a valid draft under the default deckSize of 30;
+a full default deck needs at least ten distinct Card IDs.
 
 ## API
 
@@ -38,12 +41,12 @@ const auto config = soulbound::JsonLoader::loadGameConfig("data/game_config.json
 soulbound::DeckManager manager(cards, config, "data/decks");
 
 // Partial or empty decks can be saved as drafts.
-soulbound::DeckDefinition draft{"my-deck", "My Deck", {{"knight", 10}}};
+soulbound::DeckDefinition draft{"my-deck", "My Deck", {{"knight", 1}}};
 manager.create(draft);
 auto result = manager.validate(draft, soulbound::DeckValidationMode::Play);
-// result.error == IncompleteDeck, result.totalCards == 10.
+// result.error == IncompleteDeck, result.totalCards == 1.
 
-draft.cards = {{"knight", 20}, {"guard", 10}}; // For default deckSize == 30.
+draft.cards = manager.get("starter-knight")->cards; // Copy a shipped legal 30-card list.
 manager.update(draft);
 const auto loaded = manager.get("my-deck"); // optional<DeckDefinition>
 const auto all = manager.getAll();           // sorted by deck ID
@@ -62,9 +65,13 @@ strict JSON loader; `JsonLoader::loadCards()` remains supported.
 `DeckValidationResult` containing `error`, `message`, `totalCards` and `isValid()`.
 Storage mode (the default) accepts totals from zero through `config.deckSize`.
 Play mode requires exactly `config.deckSize`. Unknown cards, non-positive counts
-and excessive totals fail both modes. Summation checks the remaining capacity
+and excessive totals or copies fail both modes. Counts from repeated entries
+are aggregated per Card ID with overflow-safe capacity checks. Summation checks the remaining capacity
 before adding, including when a count is INT64_MAX. The configuration must itself
 be valid; an invalid GameConfig throws `std::invalid_argument`.
+`maxCopiesPerCard` must be a positive integer. Existing config JSON files may omit
+this field and receive the default 3; explicit invalid values are rejected. C++
+four-field aggregate initialization also retains the default 3 as the fifth field.
 
 `DeckManager` owns a database snapshot and config. It validates before creating,
 updating, or returning stored definitions, without exposing mutable internal state.
@@ -99,14 +106,15 @@ The new constructor `Game(cards, config, deck1, deck2, seed)` owns copies of bot
 DeckDefinitions and the CardDatabase. `start()` validates both before changing
 state or allocating card instances, expands counts, and uses the existing start,
 shuffle and dealing path. It returns UnknownCard for an unknown definition and
-InvalidDeck for other deck validation failures. Reset keeps the deck snapshots;
+InvalidDeck for other deck validation failures, including TooManyCopies. Reset keeps the deck snapshots;
 restarting produces fresh InstanceIds. Files and DeckManager can be changed or
 destroyed after construction without affecting the match.
 
 The old constructor, `Game::fromFiles(config, cards, seed)` and
 `start(vector<string>, vector<string>)` remain supported. The old constructor and
 fromFiles do not set deck snapshots, so their no-argument start returns InvalidDeck.
-Calling the legacy start with explicit vectors does not replace snapshots held
+The legacy start also validates total size, Card IDs and the copy cap before
+changing state. Calling it with explicit vectors does not replace snapshots held
 by a Game made with the new constructor.
 
 ## CLI and tests
@@ -120,13 +128,13 @@ ctest --test-dir build -R 'decks\.|cli.deck_selection' --output-on-failure
 ```
 
 Without IDs the CLI selects `starter-knight` and `starter-guard`. Both supplied
-sample JSON decks have 15 Knights and 15 Guards. Listing includes drafts and
+sample JSON decks have ten distinct Card IDs with three copies each. Listing includes drafts and
 readiness; trying to play a draft fails. The same deck may be selected for both
 players, producing separate card instances. CLI only loads/selects through Core
 APIs; no CRUD commands or deck-building rules are implemented in the CLI.
 
 New tests cover catalog loading/listing, draft and playable validation, count
-boundaries, no copy limit, custom deck sizes, CRUD/reopen persistence, rejected
+boundaries, three/four copies and repeated-entry aggregation, custom deck sizes/limits, CRUD/reopen persistence, rejected
 updates preserving prior data, corrupt/schema-invalid JSON, filesystem errors,
 path/filename checks, independent Game snapshots, deterministic dealing, legacy
 compatibility and CLI deck selection/listing/failure handling. Existing full-match

@@ -32,7 +32,8 @@ void write(const std::filesystem::path& path, const std::string& text) {
     std::ofstream output(path); output << text; output.close(); CHECK(output.good());
 }
 CardDatabase cards() { return CardDatabase::fromFile(CARD_DATA_PATH); }
-DeckDefinition deck(std::string id = "sample", std::int64_t count = 30) {
+DeckDefinition deck(std::string id = "sample", std::int64_t count = 6) {
+    if (count == 6) return {std::move(id), "Sample Deck", {{"knight", 3}, {"guard", 3}}};
     return {std::move(id), "Sample Deck", {{"knight", count}}};
 }
 
@@ -49,12 +50,12 @@ void testCatalog() {
 
 void testValidation() {
     const auto database = cards();
-    const GameConfig config;
+    GameConfig config; config.deckSize = 6;
     auto validate = [&](const DeckDefinition& value, DeckValidationMode mode = DeckValidationMode::Storage) {
         return DeckValidator::validate(value, database, config, mode);
     };
     CHECK(validate(deck()).isValid());
-    CHECK(validate(deck(), DeckValidationMode::Play).isValid()); // 30 copies allowed.
+    CHECK(validate(deck(), DeckValidationMode::Play).isValid()); // Three copies of each ID.
     CHECK(validate(deck("draft", 1)).isValid());
     CHECK(validate(deck("draft", 1), DeckValidationMode::Play).error == DeckValidationError::IncompleteDeck);
     CHECK(validate({"empty", "Empty", {}}).isValid());
@@ -71,8 +72,10 @@ void testValidation() {
     CHECK(validate(value).error == DeckValidationError::InvalidName);
     for (const auto* id : {"", "../escape", "/absolute", "a/b", "a\\b", ".", "a.json"})
         CHECK(validate(deck(id)).error == DeckValidationError::InvalidId);
-    value = {"duplicate-entries", "Repeated entries", {{"knight", 10}, {"knight", 20}}};
-    CHECK(validate(value, DeckValidationMode::Play).isValid()); // No implicit copy limit.
+    value = {"duplicate-entries", "Repeated entries", {{"knight", 1}, {"knight", 2}, {"guard", 3}}};
+    CHECK(validate(value, DeckValidationMode::Play).isValid());
+    value.cards.push_back({"knight", 1});
+    CHECK(validate(value).error == DeckValidationError::TooManyCards);
     GameConfig small{20, 1, 2, 3};
     CHECK(DeckValidator::validate(deck("small", 3), database, small, DeckValidationMode::Play).isValid());
     CHECK(DeckValidator::validate(deck("small", 4), database, small).error == DeckValidationError::TooManyCards);
@@ -82,7 +85,8 @@ void testValidation() {
 void testCrud() {
     TemporaryDirectory temporary;
     const auto root = temporary.path / "decks";
-    DeckManager manager(cards(), {}, root);
+    GameConfig config; config.deckSize = 6;
+    DeckManager manager(cards(), config, root);
     CHECK(manager.getAll().empty());
     CHECK(!manager.get("missing"));
     CHECK(!manager.remove("missing"));
@@ -92,7 +96,7 @@ void testCrud() {
     CHECK(std::filesystem::is_regular_file(root / "draft.json"));
     CHECK(manager.get("draft") == draft);
     CHECK(!manager.validate(draft, DeckValidationMode::Play).isValid());
-    const DeckManager reopened(cards(), {}, root);
+    const DeckManager reopened(cards(), config, root);
     CHECK(reopened.get("draft") == draft);
     throws<std::invalid_argument>([&] { manager.create(draft); });
     auto invalid = draft; invalid.cards[0].count = 31;
@@ -101,7 +105,7 @@ void testCrud() {
     invalid.cards[0] = {"unknown", 1};
     throws<std::invalid_argument>([&] { manager.create(invalid); });
     CHECK(manager.get("draft") == draft);
-    draft.cards[0].count = 30; draft.name = "Completed";
+    draft.cards = {{"knight", 3}, {"guard", 3}}; draft.name = "Completed";
     manager.update(draft);
     CHECK(reopened.get("draft") == draft);
     CHECK(manager.validate(draft, DeckValidationMode::Play).isValid());
@@ -212,7 +216,7 @@ void testGameDecks() {
         };
         for (const auto& c : state.hand) inspect(c);
         for (const auto& c : state.deck) inspect(c);
-        CHECK(knights == (player == 0 ? 3 : 6)); CHECK(guards == (player == 0 ? 3 : 0));
+        CHECK(knights == 3); CHECK(guards == 3);
     }
     CHECK(game.start() == ActionError::None);
     for (const auto& player : game.getState().players) {
@@ -227,7 +231,7 @@ void testGameDecks() {
         const auto before = snapshot(invalid);
         CHECK(invalid.start() == expected); CHECK(snapshot(invalid) == before);
         // A failed no-argument restart must also preserve an already playing match.
-        CHECK(invalid.start(Game::Deck(6, "knight"), Game::Deck(6, "guard")) == ActionError::None);
+        CHECK(invalid.start(Game::Deck{"knight", "knight", "knight", "guard", "guard", "guard"}, Game::Deck{"guard", "guard", "guard", "knight", "knight", "knight"}) == ActionError::None);
         const auto playing = snapshot(invalid);
         CHECK(invalid.start() == expected); CHECK(snapshot(invalid) == playing);
     }
@@ -246,9 +250,65 @@ void testGameDecks() {
     CHECK(owned.start() == ActionError::None);
 }
 
+void testCopyLimits() {
+    CHECK(GameConfig{}.maxCopiesPerCard == 3);
+    const auto database = cards();
+    const GameConfig config{20, 2, 3, 6};
+    const DeckDefinition valid{"valid", "Three copies each", {{"knight", 3}, {"guard", 3}}};
+    const DeckDefinition repeated{"repeated", "Repeated entries", {{"knight", 1}, {"guard", 3}, {"knight", 2}}};
+    const DeckDefinition four{"four", "Four copies", {{"knight", 4}, {"guard", 2}}};
+    const DeckDefinition splitFour{"split", "Four split copies", {{"knight", 2}, {"guard", 2}, {"knight", 2}}};
+    for (const auto mode : {DeckValidationMode::Storage, DeckValidationMode::Play}) {
+        CHECK(DeckValidator::validate(valid, database, config, mode).isValid());
+        CHECK(DeckValidator::validate(repeated, database, config, mode).isValid());
+        for (const auto& bad : {four, splitFour}) {
+            const auto result = DeckValidator::validate(bad, database, config, mode);
+            CHECK(result.error == DeckValidationError::TooManyCopies);
+            CHECK(result.message.find("knight") != std::string::npos);
+        }
+    }
+    // Drafts must obey the same cap even when far below deckSize.
+    CHECK(DeckValidator::validate(deck("three", 3), database, {}).isValid());
+    CHECK(DeckValidator::validate(deck("four", 4), database, {}).error == DeckValidationError::TooManyCopies);
+    TemporaryDirectory temporary;
+    DeckManager manager(database, config, temporary.path);
+    manager.create(valid);
+    for (const auto& bad : {four, splitFour}) {
+        throws<std::invalid_argument>([&] { manager.create(bad); });
+        auto update = bad; update.id = valid.id;
+        throws<std::invalid_argument>([&] { manager.update(update); });
+        CHECK(manager.get(valid.id) == valid);
+        for (const bool first : {false, true}) {
+            Game invalid(database, config, first ? bad : valid, first ? valid : bad, 42);
+            const auto before = snapshot(invalid);
+            CHECK(invalid.start() == ActionError::InvalidDeck);
+            CHECK(snapshot(invalid) == before);
+        }
+    }
+    Game game(database, config, repeated, valid, 42);
+    CHECK(game.start() == ActionError::None);
+    const auto before = snapshot(game);
+    const Game::Deck legal{"knight", "knight", "knight", "guard", "guard", "guard"};
+    const Game::Deck illegal{"knight", "guard", "knight", "guard", "knight", "knight"};
+    CHECK(game.start(illegal, legal) == ActionError::InvalidDeck);
+    CHECK(snapshot(game) == before);
+    CHECK(game.start(legal, illegal) == ActionError::InvalidDeck);
+    CHECK(snapshot(game) == before);
+    CHECK(game.start(legal, legal) == ActionError::None);
+    // The limit is configuration-driven, not a hardcoded magic number.
+    auto custom = config; custom.maxCopiesPerCard = 4;
+    CHECK(DeckValidator::validate(four, database, custom, DeckValidationMode::Play).isValid());
+    Game configured(database, custom, four, four, 42);
+    CHECK(configured.start() == ActionError::None);
+    CHECK(configured.start(illegal, illegal) == ActionError::None);
+    custom.maxCopiesPerCard = 0;
+    CHECK(!custom.isValid());
+    throws<std::invalid_argument>([&] { Game invalid(database, custom, 42); });
+}
+
 int main(int argc, char** argv) {
     const std::vector<std::pair<std::string, std::function<void()>>> tests = {
-        {"catalog", testCatalog}, {"validation", testValidation}, {"crud", testCrud},
+        {"copy_limits", testCopyLimits}, {"catalog", testCatalog}, {"validation", testValidation}, {"crud", testCrud},
         {"corrupt_storage", testCorruptStorage}, {"game_decks", testGameDecks}
     };
     bool selected = false;

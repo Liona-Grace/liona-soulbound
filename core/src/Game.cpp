@@ -76,9 +76,12 @@ ActionError Game::start(const Deck& player1Deck, const Deck& player2Deck) {
     const std::array<const Deck*, 2> decks{&player1Deck, &player2Deck};
     for (const auto* deck : decks) {
         if (deck->size() != config_.deckSize) return ActionError::InvalidDeck;
-        for (const auto& id : *deck) {
-            if (!database_.find(id)) return ActionError::UnknownCard;
-        }
+        // Use the same validator as DeckDefinition, including the configured copy cap.
+        DeckDefinition definition{"legacy", "Legacy deck", {}};
+        for (const auto& id : *deck) definition.cards.push_back({id, 1});
+        const auto result = DeckValidator::validate(definition, database_, config_, DeckValidationMode::Play);
+        if (!result.isValid()) return result.error == DeckValidationError::UnknownCard
+            ? ActionError::UnknownCard : ActionError::InvalidDeck;
     }
     if (config_.deckSize > (std::numeric_limits<InstanceId>::max() - nextInstanceId_) / 2)
         return ActionError::InvalidDeck;

@@ -9,9 +9,10 @@ struct GameConfig {
     std::size_t startingHandSize = 4;
     std::size_t boardSize = 6;
     std::size_t deckSize = 30;
+    std::size_t maxCopiesPerCard = 3;
 
     [[nodiscard]] bool isValid() const noexcept {
-        return startingHP > 0 && boardSize > 0 && deckSize > 0 && startingHandSize <= deckSize;
+        return startingHP > 0 && boardSize > 0 && deckSize > 0 && startingHandSize <= deckSize && maxCopiesPerCard > 0;
     }
 };
 
