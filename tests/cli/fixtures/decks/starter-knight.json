@@ -1,0 +1,10 @@
+{
+  "id": "starter-knight",
+  "name": "Starter Knight",
+  "cards": [
+    {
+      "cardId": "knight",
+      "count": 1
+    }
+  ]
+}

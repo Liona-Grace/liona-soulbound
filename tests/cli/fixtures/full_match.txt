@@ -1,0 +1,29 @@
+help
+hand
+summon 1 0
+end
+end
+battle
+direct 1
+end
+end
+battle
+direct 1
+end
+end
+battle
+direct 1
+end
+end
+battle
+direct 1
+state
+board
+draw
+summon 1 0
+battle
+attack 1 2
+direct 1
+end
+state
+quit

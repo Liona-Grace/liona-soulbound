@@ -2,6 +2,7 @@
 
 #include "soulbound/CombatSystem.hpp"
 #include "soulbound/JsonLoader.hpp"
+#include "soulbound/DeckValidator.hpp"
 
 #include <algorithm>
 #include <limits>
@@ -31,6 +32,28 @@ Game::Game(CardDatabase database, GameConfig config, std::uint32_t seed)
         throw std::invalid_argument("Invalid GameConfig");
     }
     reset();
+}
+
+Game::Game(CardDatabase database, GameConfig config, DeckDefinition player1Deck,
+           DeckDefinition player2Deck, std::uint32_t seed)
+    : Game(std::move(database), config, seed) {
+    deckDefinitions_ = std::array<DeckDefinition, 2>{std::move(player1Deck), std::move(player2Deck)};
+}
+
+ActionError Game::start() {
+    if (!deckDefinitions_) return ActionError::InvalidDeck;
+    for (const auto& deck : *deckDefinitions_) {
+        const auto result = DeckValidator::validate(deck, database_, config_, DeckValidationMode::Play);
+        if (!result.isValid()) return result.error == DeckValidationError::UnknownCard
+            ? ActionError::UnknownCard : ActionError::InvalidDeck;
+    }
+    std::array<Deck, 2> expanded;
+    for (std::size_t i = 0; i < expanded.size(); ++i) {
+        expanded[i].reserve(config_.deckSize);
+        for (const auto& entry : (*deckDefinitions_)[i].cards)
+            expanded[i].insert(expanded[i].end(), static_cast<std::size_t>(entry.count), entry.cardId);
+    }
+    return start(expanded[0], expanded[1]);
 }
 
 Game Game::fromFiles(const std::filesystem::path& configPath,

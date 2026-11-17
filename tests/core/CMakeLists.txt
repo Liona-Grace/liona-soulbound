@@ -9,6 +9,15 @@ set_target_properties(soulbound_core_tests PROPERTIES CXX_EXTENSIONS OFF)
 
 foreach(case IN ITEMS cards json start shuffle config config_json load_order draw summon zero_hp turns
                       survival spillover counterattack targets direct_attack hp
-                      game_over simulations)
+                      game_over simulations manual_phases combat_lifetime lifecycle_rejections
+                      healing_boundaries complete_simulations)
     add_test(NAME core.${case} COMMAND soulbound_core_tests ${case})
+endforeach()
+
+add_executable(soulbound_deck_tests DeckTests.cpp)
+target_link_libraries(soulbound_deck_tests PRIVATE soulbound::core)
+target_compile_definitions(soulbound_deck_tests PRIVATE CARD_DATA_PATH="${PROJECT_SOURCE_DIR}/data/cards.json")
+set_target_properties(soulbound_deck_tests PROPERTIES CXX_EXTENSIONS OFF)
+foreach(case IN ITEMS catalog validation crud corrupt_storage game_decks)
+    add_test(NAME decks.${case} COMMAND soulbound_deck_tests ${case})
 endforeach()

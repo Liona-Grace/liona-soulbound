@@ -1,0 +1,10 @@
+{
+  "id": "starter-guard",
+  "name": "Starter Guard",
+  "cards": [
+    {
+      "cardId": "guard",
+      "count": 1
+    }
+  ]
+}

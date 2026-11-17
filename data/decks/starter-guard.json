@@ -1,0 +1,46 @@
+{
+  "id": "starter-guard",
+  "name": "Starter Guard",
+  "cards": [
+    {
+      "cardId": "recruit",
+      "count": 3
+    },
+    {
+      "cardId": "scout",
+      "count": 3
+    },
+    {
+      "cardId": "slinger",
+      "count": 3
+    },
+    {
+      "cardId": "archer",
+      "count": 3
+    },
+    {
+      "cardId": "duelist",
+      "count": 3
+    },
+    {
+      "cardId": "guard",
+      "count": 3
+    },
+    {
+      "cardId": "knight",
+      "count": 3
+    },
+    {
+      "cardId": "berserker",
+      "count": 3
+    },
+    {
+      "cardId": "lancer",
+      "count": 3
+    },
+    {
+      "cardId": "golem",
+      "count": 3
+    }
+  ]
+}

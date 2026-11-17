@@ -7,6 +7,7 @@
 #include <fstream>
 #include <iostream>
 #include <limits>
+#include <map>
 #include <set>
 #include <sstream>
 #include <stdexcept>
@@ -124,18 +125,31 @@ void invariant(const Game& game, std::size_t deckSize = 30, std::size_t boardSiz
     const auto definitions = database();
     const auto& state = game.getState();
     CHECK(state.activePlayer < 2);
+    CHECK(state.turnNumber >= 1);
+    CHECK(state.activePlayer == (state.turnNumber - 1) % 2);
+    CHECK(state.phase == Phase::Main || state.phase == Phase::Battle);
     for (PlayerId id = 0; id < 2; ++id) {
         const auto& player = state.players[id];
+        CHECK(player.hp >= 0);
         std::size_t count = 0;
         auto inspect = [&](const CardInstance& card) {
             CHECK(card.id != 0);
             CHECK(ids.insert(card.id).second);
             CHECK(card.owner == id);
             CHECK(definitions.find(card.definitionId));
+            CHECK(card.currentHP <= definitions.find(card.definitionId)->hp);
             ++count;
         };
-        for (const auto& card : player.deck) inspect(card);
-        for (const auto& card : player.hand) inspect(card);
+        for (const auto& card : player.deck) {
+            inspect(card);
+            CHECK(card.currentHP == definitions.find(card.definitionId)->hp);
+            CHECK(!card.hasAttacked);
+        }
+        for (const auto& card : player.hand) {
+            inspect(card);
+            CHECK(card.currentHP == definitions.find(card.definitionId)->hp);
+            CHECK(!card.hasAttacked);
+        }
         for (const auto& card : player.tomb) inspect(card);
         CHECK(player.board.zones().size() == boardSize);
         for (const auto& zone : player.board.zones()) {
@@ -655,6 +669,253 @@ void testSimulations() {
     }
 }
 
+
+// Stable identity includes definition and owner, not merely a conserved card count.
+using IdentityLedger = std::map<InstanceId, std::pair<std::string, PlayerId>>;
+IdentityLedger identities(const Game& game) {
+    IdentityLedger result;
+    auto record = [&](const CardInstance& card) {
+        CHECK(result.emplace(card.id, std::make_pair(card.definitionId, card.owner)).second);
+    };
+    for (const auto& player : game.getState().players) {
+        for (const auto& card : player.deck) record(card);
+        for (const auto& card : player.hand) record(card);
+        for (const auto& card : player.tomb) record(card);
+        for (const auto& zone : player.board.zones()) if (zone) record(*zone);
+    }
+    return result;
+}
+
+void testManualPhases() {
+    auto game = started();
+    const auto ledger = identities(game);
+    auto check = [&] { invariant(game); CHECK(identities(game) == ledger); };
+    const auto first = game.getState().players[0].hand.front().id;
+    const auto second = game.getState().players[1].hand.front().id;
+    const auto sizes = [&] {
+        return std::array<std::size_t, 4>{game.getState().players[0].hand.size(),
+            game.getState().players[0].deck.size(), game.getState().players[1].hand.size(),
+            game.getState().players[1].deck.size()};
+    };
+    const auto initial = sizes();
+    ok(game.endTurn()); check(); // Main -> opponent Main is currently legal.
+    CHECK(sizes() == initial);
+    CHECK(!game.getState().hasDrawnThisTurn);
+    ok(game.beginBattle()); check();
+    rejected(game, ActionError::WrongPhase, [&] { return game.beginBattle(); }); check();
+    rejected(game, ActionError::WrongPhase, [&] { return game.drawCard(1); }); check();
+    rejected(game, ActionError::WrongPhase, [&] { return game.summonUnit(1, second, 0); }); check();
+    ok(game.endTurn()); check();
+    CHECK(sizes() == initial);
+    const auto top = game.getState().players[0].deck.back().id;
+    ok(game.drawCard(0)); check();
+    CHECK(game.getState().players[0].hand.size() == initial[0] + 1);
+    CHECK(game.getState().players[0].deck.size() == initial[1] - 1);
+    CHECK(game.getState().players[0].hand.back().id == top);
+    CHECK(game.getState().players[1].hand.size() == initial[2]);
+    rejected(game, ActionError::AlreadyDrawn, [&] { return game.drawCard(0); }); check();
+    ok(game.summonUnit(0, first, 0)); check();
+    CHECK(game.getState().players[0].hp == 12);
+    CHECK(!unit(game, 0).hasAttacked);
+    ok(game.beginBattle()); check();
+    ok(game.attackPlayer(first, 1)); check(); // Newly summoned on turn 3.
+    CHECK(game.getState().players[1].hp == 15);
+    ok(game.endTurn()); check();
+    CHECK(!game.getState().hasDrawnThisTurn);
+    CHECK(!unit(game, 0).hasAttacked);
+}
+
+void testCombatLifetime() {
+    // Two different attackers repeatedly hit a surviving defender; each receives
+    // a counterattack. The same defender can initiate an attack on its own turn.
+    auto game = started("guard", "knight");
+    const auto a = summon(game, 0, 0);
+    const auto b = summon(game, 0, 1);
+    ok(game.endTurn());
+    const auto d = summon(game, 1);
+    ok(game.endTurn());
+    ok(game.beginBattle());
+    const auto ledger = identities(game);
+    ok(game.attackUnit(a, d)); invariant(game);
+    CHECK(unit(game, 0, 0).currentHP == 1);
+    CHECK(unit(game, 1).currentHP == 5);
+    CHECK(!unit(game, 1).hasAttacked);
+    ok(game.attackUnit(b, d)); invariant(game);
+    CHECK(unit(game, 0, 1).currentHP == 1);
+    CHECK(unit(game, 1).currentHP == 2);
+    CHECK(!unit(game, 1).hasAttacked);
+    ok(game.endTurn());
+    ok(game.beginBattle());
+    ok(game.attackUnit(d, a)); invariant(game);
+    CHECK(unit(game, 1).currentHP == 2); // Dead guard cannot counterattack.
+    CHECK(unit(game, 1).hasAttacked);
+    CHECK(game.getState().players[0].tomb.back().id == a);
+    CHECK(game.getState().players[0].tomb.back().currentHP == -4);
+    CHECK(game.getState().players[0].hp == 4); // 20 - 6 - 6 - 4 overflow.
+    CHECK(identities(game) == ledger);
+    rejected(game, ActionError::AlreadyAttacked, [&] { return game.attackUnit(d, b); });
+
+    // Counterattack kills the attacker, leaving negative HP in Tomb and
+    // clamping overflow to zero without ending a player protected by another unit.
+    auto counter = started("guard", "knight");
+    const auto attacker = summon(counter, 0);
+    (void)summon(counter, 0, 1);
+    ok(counter.damageUnit(attacker, 5));
+    ok(counter.damagePlayer(0, 7)); // HP 1 with two guards.
+    ok(counter.endTurn());
+    const auto defender = summon(counter, 1);
+    ok(counter.endTurn()); ok(counter.beginBattle());
+    ok(counter.attackUnit(attacker, defender)); invariant(counter);
+    CHECK(counter.getState().players[0].hp == 0);
+    CHECK(counter.getState().status == GameStatus::Playing);
+    CHECK(counter.getState().players[0].tomb.back().currentHP == -4);
+    CHECK(counter.getState().players[0].tomb.back().hasAttacked);
+    CHECK(unit(counter, 1).currentHP == 5);
+    CHECK(counter.getState().players[1].hp == 12);
+}
+
+void checkInactiveActions(Game& game) {
+    const std::vector<std::function<ActionError()>> actions = {
+        [&] { return game.drawCard(0); }, [&] { return game.summonUnit(0, 1, 0); },
+        [&] { return game.beginBattle(); }, [&] { return game.endTurn(); },
+        [&] { return game.attackUnit(1, 2); }, [&] { return game.attackPlayer(1, 1); },
+        [&] { return game.damagePlayer(0, 1); }, [&] { return game.healPlayer(0, 1); },
+        [&] { return game.damageUnit(1, 1); }, [&] { return game.healUnit(1, 1); },
+        [&] { return game.moveToTomb(1); }
+    };
+    for (const auto& action : actions) rejected(game, ActionError::NotPlaying, action);
+}
+
+void testLifecycleRejections() {
+    Game fresh(database(), {}, 11);
+    checkInactiveActions(fresh);
+    for (PlayerId loser : {PlayerId{0}, PlayerId{1}}) {
+        auto game = started();
+        const auto old = identities(game);
+        ok(game.damagePlayer(loser, 20));
+        CHECK(game.getState().status == (loser == 0 ? GameStatus::Player2Won : GameStatus::Player1Won));
+        invariant(game);
+        checkInactiveActions(game);
+        CHECK(identities(game) == old);
+        ok(game.start(mixedDeck(), mixedDeck()));
+        invariant(game);
+        const auto next = identities(game);
+        for (const auto& [id, identity] : next) CHECK(!old.contains(id));
+        game.reset();
+        CHECK(game.getState().status == GameStatus::NotStarted);
+        CHECK(identities(game).empty());
+        checkInactiveActions(game);
+        ok(game.start(mixedDeck(), mixedDeck()));
+        invariant(game);
+        for (const auto& [id, identity] : identities(game)) {
+            CHECK(!next.contains(id)); CHECK(!old.contains(id));
+        }
+    }
+}
+
+void testHealingBoundaries() {
+    auto game = started();
+    const auto id = summon(game, 0);
+    const auto max = std::numeric_limits<HitPoints>::max();
+    const auto min = std::numeric_limits<HitPoints>::min();
+    ok(game.damageUnit(id, 7));
+    ok(game.healUnit(id, max));
+    CHECK(unit(game, 0).currentHP == 8);
+    ok(game.healPlayer(0, max - 12));
+    CHECK(game.getState().players[0].hp == max);
+    for (const auto amount : {HitPoints{1}, max, min}) {
+        rejected(game, ActionError::InvalidAmount, [&] { return game.healPlayer(0, amount); });
+        invariant(game);
+    }
+    rejected(game, ActionError::InvalidAmount, [&] { return game.healUnit(id, min); });
+    rejected(game, ActionError::InvalidAmount, [&] { return game.damageUnit(id, min); });
+    rejected(game, ActionError::InvalidAmount, [&] { return game.damagePlayer(0, min); });
+    ok(game.healPlayer(0, 0));
+    ok(game.damagePlayer(0, max));
+    CHECK(game.getState().players[0].hp == 0);
+    CHECK(game.getState().status == GameStatus::Playing);
+    ok(game.healPlayer(0, max));
+    ok(game.damageUnit(id, max));
+    CHECK(game.getState().players[0].tomb.back().currentHP == 8 - max);
+    CHECK(game.getState().players[0].hp == max); // Engine damage has no overflow.
+    rejected(game, ActionError::InvalidInstance, [&] { return game.healUnit(id, max); });
+    invariant(game);
+}
+
+void testCompleteSimulations() {
+    struct Result { std::string trace; std::size_t actions; std::uint64_t turns; GameStatus status; };
+    auto run = [](std::uint32_t seed) {
+        Game game(database(), {}, seed);
+        ok(game.start(mixedDeck(), mixedDeck()));
+        const auto ledger = identities(game);
+        std::ostringstream trace;
+        std::size_t actions = 0;
+        auto step = [&](const std::function<ActionError()>& action) {
+            const auto before = snapshot(game);
+            const auto error = action();
+            if (error != ActionError::None) CHECK(snapshot(game) == before);
+            invariant(game);
+            CHECK(identities(game) == ledger);
+            trace << static_cast<int>(error) << ':' << snapshot(game) << '\n';
+            ++actions;
+        };
+        invariant(game);
+        while (game.getState().status == GameStatus::Playing && game.getState().turnNumber <= 256) {
+            const auto player = game.getState().activePlayer;
+            const auto opponent = 1 - player;
+            // Deliberately rejected calls are audited just like successful calls.
+            step([&] { return game.drawCard(opponent); });
+            step([&] { return game.drawCard(player); });
+            step([&] { return game.drawCard(player); });
+            std::vector<InstanceId> hand;
+            for (const auto& card : game.getState().players[player].hand) hand.push_back(card.id);
+            for (std::size_t zone = 0; zone < 6 && zone < hand.size(); ++zone)
+                step([&] { return game.summonUnit(player, hand[zone], zone); });
+            step([&] { return game.beginBattle(); });
+            step([&] { return game.drawCard(player); });
+            std::vector<InstanceId> attackers;
+            for (const auto& zone : game.getState().players[player].board.zones())
+                if (zone) attackers.push_back(zone->id);
+            for (const auto attacker : attackers) {
+                if (game.getState().status != GameStatus::Playing) break;
+                InstanceId defender = 0;
+                for (const auto& zone : game.getState().players[opponent].board.zones())
+                    if (zone) { defender = zone->id; break; }
+                step([&] { return defender ? game.attackUnit(attacker, defender)
+                                          : game.attackPlayer(attacker, opponent); });
+            }
+            if (game.getState().status == GameStatus::Playing) {
+                const auto turn = game.getState().turnNumber;
+                const auto hand0 = game.getState().players[0].hand.size();
+                const auto hand1 = game.getState().players[1].hand.size();
+                step([&] { return game.endTurn(); });
+                CHECK(game.getState().turnNumber == turn + 1);
+                CHECK(game.getState().activePlayer == opponent);
+                CHECK(game.getState().phase == Phase::Main);
+                CHECK(!game.getState().hasDrawnThisTurn);
+                CHECK(game.getState().players[0].hand.size() == hand0);
+                CHECK(game.getState().players[1].hand.size() == hand1);
+            }
+        }
+        CHECK(game.getState().status != GameStatus::Playing);
+        checkInactiveActions(game);
+        invariant(game);
+        CHECK(identities(game) == ledger);
+        return Result{trace.str(), actions, game.getState().turnNumber, game.getState().status};
+    };
+    for (std::uint32_t seed = 0; seed < 32; ++seed) {
+        const auto first = run(seed);
+        const auto replay = run(seed);
+        CHECK(first.trace == replay.trace);
+        CHECK(first.actions == replay.actions);
+        CHECK(first.turns == replay.turns);
+        CHECK(first.status == replay.status);
+        std::cout << "seed=" << seed << " turns=" << first.turns << " actions=" << first.actions
+                  << " winner=" << (first.status == GameStatus::Player1Won ? 1 :
+                                     first.status == GameStatus::Player2Won ? 2 : 0) << '\n';
+    }
+}
+
 int main(int argc, char** argv) {
     const std::vector<std::pair<std::string, std::function<void()>>> tests = {
         {"cards", testCards}, {"json", testJsonValidation}, {"start", testStart},
@@ -664,7 +925,10 @@ int main(int argc, char** argv) {
         {"spillover", testCombatSpillover}, {"counterattack", testCounterattackSpillover},
         {"targets", testTargets}, {"direct_attack", testDirectAttackAndGameOver},
         {"hp", testHPAndEngineOperations}, {"game_over", testCombatGameOverAndLimits},
-        {"simulations", testSimulations}
+        {"simulations", testSimulations},
+        {"manual_phases", testManualPhases}, {"combat_lifetime", testCombatLifetime},
+        {"lifecycle_rejections", testLifecycleRejections}, {"healing_boundaries", testHealingBoundaries},
+        {"complete_simulations", testCompleteSimulations}
     };
     bool selected = false;
     for (const auto& [name, run] : tests) {

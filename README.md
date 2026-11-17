@@ -1,11 +1,16 @@
 # Liona Soulbound
 
+Vanilla Core/CLI validation: [Milestone 3 report](docs/validation/milestone-3.md)
+includes confirmed rules, deterministic simulation results and unresolved decisions.
+
 Project gồm C++20 core độc lập và giao diện Godot C#.
 
 - `core/`: trạng thái, luật trận đấu, JSON loader và combat; namespace `soulbound`.
+- `cli/`: simulator terminal hai người chơi; xem [lệnh và ví dụ CLI](cli/README.md).
 - `data/game_config.json`: cấu hình HP, Hand, Board và Deck lúc khởi tạo.
 - `data/cards.json`: định nghĩa hai Unit vanilla Knight và Guard.
 - `tests/core/`: kiểm thử tự động, chạy bằng CTest, không cần GUI.
+- `tests/cli/`: kiểm thử parsing/dispatch và kịch bản chơi trọn trận.
 - `adapters/`: dành cho lớp kết nối core với Godot trong tương lai.
 - `godot/`: project Godot C# với scenes, scripts và assets riêng.
 
@@ -19,10 +24,22 @@ Không tải dependency khi build.
 cmake -S . -B build
 cmake --build build
 ctest --test-dir build --output-on-failure
+./build/cli/soulbound_cli
 ```
 
 Target thư viện: `soulbound_core` (alias `soulbound::core`). Có thể tắt test bằng
 `-DBUILD_TESTING=OFF`.
+
+## Deck Management
+
+Core cung cấp CardDatabase, DeckDefinition, DeckValidator, DeckStorage và
+DeckManager. Deck JSON nằm trong `data/decks/`; lưu được Deck nháp, nhưng chỉ
+Deck đủ `GameConfig.deckSize` mới bắt đầu trận. Xem [API và schema Deck](docs/deck-management.md).
+
+```sh
+./build/cli/soulbound_cli --list-decks
+./build/cli/soulbound_cli data starter-knight starter-guard
+```
 
 ## Cấu hình và dữ liệu
 

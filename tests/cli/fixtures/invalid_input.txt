@@ -1,0 +1,36 @@
+state
+
+unknown
+summon
+summon 1
+summon 1 0 extra
+summon -1 0
+summon 1 -1
+direct 18446744073709551616
+attack 1 2x
+direct +1
+direct 1.5
+quit extra
+draw extra
+draw
+summon 999 0
+summon 1 99
+summon 1 0
+battle
+direct 1
+attack 1 2
+draw
+summon 1 1
+end
+summon 2 0
+battle
+direct 2
+attack 2 1
+attack 2 1
+end
+battle
+attack 1 2
+end
+state
+quit
+summon 1 0

@@ -3,9 +3,12 @@
 #include "soulbound/CardDatabase.hpp"
 #include "soulbound/GameConfig.hpp"
 #include "soulbound/GameState.hpp"
+#include "soulbound/DeckDefinition.hpp"
 
 #include <random>
+#include <array>
 #include <filesystem>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -26,13 +29,18 @@ public:
     explicit Game(CardDatabase database, GameConfig config = {},
                   std::uint32_t seed = std::random_device{}());
 
+    // Owns database and deck snapshots. Validation occurs in start(), not construction.
+    Game(CardDatabase database, GameConfig config, DeckDefinition player1Deck,
+         DeckDefinition player2Deck, std::uint32_t seed = std::random_device{}());
+
     // Config is loaded and validated before attempting to read card definitions.
     [[nodiscard]] static Game fromFiles(const std::filesystem::path& configPath,
                                        const std::filesystem::path& cardsPath,
                                        std::uint32_t seed = std::random_device{}());
     [[nodiscard]] const GameConfig& getConfig() const noexcept;
 
-    [[nodiscard]] ActionError start(const Deck& player1Deck, const Deck& player2Deck);
+    [[nodiscard]] ActionError start();
+    [[nodiscard]] ActionError start(const Deck& player1Deck, const Deck& player2Deck); // Legacy.
     [[nodiscard]] const GameState& getState() const noexcept;
     [[nodiscard]] const GameState& state() const noexcept; // Compatibility alias.
     [[nodiscard]] static GameStatus evaluateOutcome(const GameState& state) noexcept;
@@ -59,6 +67,7 @@ private:
     GameConfig config_;
     std::mt19937 random_;
     GameState state_;
+    std::optional<std::array<DeckDefinition, 2>> deckDefinitions_;
     InstanceId nextInstanceId_ = 1;
 
     [[nodiscard]] ActionError checkPlayerAction(PlayerId player, Phase phase) const;

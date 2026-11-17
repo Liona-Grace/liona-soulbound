@@ -1,6 +1,6 @@
 {
-  "startingHP": 20,
-  "startingHandSize": 4,
+  "startingHP": 5000,
+  "startingHandSize": 5,
   "boardSize": 6,
   "deckSize": 30
 }
